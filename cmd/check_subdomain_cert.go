@@ -12,26 +12,27 @@ var (
 )
 
 
-var domainCmd = &cobra.Command{
-    Use:   "domain",
+var checkSubdomainCertCmd = &cobra.Command{
+    Use:   "checkSubdomainCert",
     Short: "Check the validity of all certificates of all sub-domains of a given domain.",
     Long: `Check the validity of all certificates of all sub-domains of a given domain.
 
 You may provide multiple domains.`,
     Run: func(cmd *cobra.Command, args []string) {
-        domainCheck()
+        checkSubdomainCert()
     },
 }
 
 func init() {
-    RootCmd.AddCommand(domainCmd)
+    RootCmd.AddCommand(checkSubdomainCertCmd)
 
-    domainCmd.Flags().StringSliceVarP(&domains, "domains", "", []string{}, "Domains to scan for certificates")
+    checkSubdomainCertCmd.Flags().StringSliceVarP(&domains, "domains", "", []string{}, "Domains to scan for certificates")
 }
 
-func domainCheck() {
+func checkSubdomainCert() {
     if len(domains) == 0 {
         fmt.Println("You have to provide at least one domain!")
         os.Exit(1)
     }
+    fmt.Printf("Content: %v", domains)
 }
