@@ -10,7 +10,7 @@ import (
 
 func GetLogger(verbose bool) (*logrus.Logger, error) {
 	var log = logrus.New()
-	sysWriter, _ := syslog.New(syslog.LOG_INFO, "sentinel")
+	sysWriter, err := syslog.New(syslog.LOG_INFO, "sentinel")
 	if verbose {
 		log.Level = logrus.DebugLevel
 		multiWriter := io.MultiWriter(os.Stderr, sysWriter)
@@ -19,5 +19,5 @@ func GetLogger(verbose bool) (*logrus.Logger, error) {
 		log.Level = logrus.InfoLevel
 		log.Out = sysWriter
 	}
-	return log, nil
+	return log, err
 }
