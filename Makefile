@@ -40,3 +40,9 @@ go-vet:
 test:
 	@echo "==> Go test:"
 	@go test --race ./...
+
+coverage:
+# Output test coverage for all packages in profile.cov
+	@go test -covermode=set -coverprofile=profile.cov ./...
+# Coveralls.io integration.
+	@goveralls -coverprofile=profile.cov -service=travis-ci 

@@ -8,16 +8,16 @@ import (
 	"github.com/spf13/viper"
 )
 
-	var (
+var (
 	cfgFile string
 	verbose bool
 )
 
 // Base commande without sub-comandes
 var RootCmd = &cobra.Command{
-    Use:   "sentinel",
-    Short: "sentinel - Your monitoring tool to retrieve certificates from sub-domains or sub-networks and check their validity.",
-    Long: `sentinel - Your monitoring tool to check certificates validity.
+	Use:   "sentinel",
+	Short: "sentinel - Your monitoring tool to retrieve certificates from sub-domains or sub-networks and check their validity.",
+	Long: `sentinel - Your monitoring tool to check certificates validity.
 
 sentinel allows you to retrieve all the certificates you manage (or forgot about)
 by scanning all the sub-domains given a domain or by scanning a sub-network.`,
