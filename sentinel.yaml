@@ -1,0 +1,19 @@
+---
+
+zookeeper:
+  - host:port
+
+brokers:
+  - host:port
+  - host:port
+
+consumerlag:
+  minduration: 10
+  maxduration: 30
+  refresh: 10
+  consumergroups:
+    - group_1
+    - group_2
+  topics:
+    - topic_1
+    - topic_2

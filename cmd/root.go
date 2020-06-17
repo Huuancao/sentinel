@@ -35,25 +35,22 @@ func init() {
 
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
-	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
+	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 }
 
 // initConfig checks in config file and/or ENV variables if set
 func initConfig() {
 	viper.SetConfigName("sentinel")
-	// Later we might add some configuration file to store the results in a DB
-	// viper.AddConfigPath("/etc/")
+	viper.AddConfigPath("/etc/")
 	// if the config file is passed explicitly, use this instead of the default one
-	/*
-		if cfgFile != "" {
-			viper.SetConfigFile(cfgFile)
-		}
-		viper.AutomaticEnv()
+	if cfgFile != "" {
+		viper.SetConfigFile(cfgFile)
+	}
+	viper.AutomaticEnv()
 
-
-		if err := viper.ReadInConfig(); err != nil {
-			fmt.Println("Cannot read config:", err)
-			os.Exit(1)
-		}
-	*/
+	if err := viper.ReadInConfig(); err != nil {
+		fmt.Println("Cannot read config:", err)
+		os.Exit(1)
+	}
+	// Later we might add some configuration file to store the results in a DB
 }
