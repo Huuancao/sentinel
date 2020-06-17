@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	cfgFile string
-	verbose bool
+	cfgFile    string
+	verbose    bool
+	brokerList []string
 )
 
 // Base commande without sub-comandes
@@ -32,10 +33,11 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-
+	RootCmd.PersistentFlags().StringArrayVarP(&brokerList, "brokers", "", []string{}, "Display messages for given brokers")
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
-
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
+	viper.BindPFlag("brokers", RootCmd.PersistentFlags().Lookup("brokers"))
+
 }
 
 // initConfig checks in config file and/or ENV variables if set

@@ -4,8 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/Huuancao/sentinel/pkg/config"
+	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 )
 
@@ -47,6 +50,21 @@ func init() {
 }
 
 // getPartitions returns the list of available partitions
+func getPartitions(c sarama.Consumer) ([]int32, error) {
+	if partitions == "all" {
+		return c.Partitions(topic)
+	}
+	parts := strings.Split(partitions, ",")
+	var partList []int32
+	for i := range parts {
+		val, err := strconv.ParseInt(parts[i], 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		partList = append(partList, int32(val))
+	}
+	return partList, nil
+}
 
 // monitorTopic
 func monitorTopic() {
@@ -56,4 +74,25 @@ func monitorTopic() {
 		os.Exit(1)
 	}
 	logger.Debugf("Provided config: topic: %s, limit: %d, newest: %t, oldest: %t, offset: %d, partitions: %v,", topic, limit, newest, oldest, offset, partitions)
+
+	client, err := config.GetKafkaClient()
+	if err != nil {
+		fmt.Printf("cannot connect to Kafka: %s\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	consumer, err := sarama.NewConsumerFromClient(client)
+	if err != nil {
+		fmt.Printf("cannot create Kafka consumer: %s\n", err)
+		os.Exit(1)
+	}
+	defer consumer.Close()
+
+	partitionList, err := getPartitions(consumer)
+	logger.Debugf("Partition list: %v", partitionList)
+
+	brokerList := config.GetBrokers()
+
+	logger.Debugf("Provided brokers: %v,", brokerList)
 }

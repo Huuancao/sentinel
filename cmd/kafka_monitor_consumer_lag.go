@@ -52,11 +52,11 @@ func init() {
 }
 
 func consumerLag() {
-	minDuration = viper.GetInt("consumerlag.minduration")
-	maxDuration = viper.GetInt("consumerlag.maxduration")
-	refresh = viper.GetInt("consumerlag.refresh")
-	groups = viper.GetStringSlice("consumerlag.consumergroups")
-	topics = viper.GetStringSlice("consumerlag.topics")
+	minDuration = viper.GetInt("kafka.consumerlag.minduration")
+	maxDuration = viper.GetInt("kafka.consumerlag.maxduration")
+	refresh = viper.GetInt("kafka.consumerlag.refresh")
+	groups = viper.GetStringSlice("kafka.consumerlag.consumergroups")
+	topics = viper.GetStringSlice("kafka.consumerlag.topics")
 
 	logger, err := config.GetLogger(true)
 	if err != nil {
