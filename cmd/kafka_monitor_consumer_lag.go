@@ -29,7 +29,7 @@ var (
 )
 
 var consumerLagCmd = &cobra.Command{
-	Use:   "consumerlag",
+	Use:   "kafkaConsumerlag",
 	Short: "Monitor the consumer lag of a specific kafka topic(s).",
 	Long:  `Monitor the consumer lag of a specific kafka topic(s).`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -63,7 +63,7 @@ func consumerLag() {
 		fmt.Printf("Could not create logger: %s\n", err)
 		os.Exit(1)
 	}
-	logger.Debugf("Provided domains: %d, %d, %v, %v,", minDuration, maxDuration, groups, topics)
+	logger.Debugf("Provided config: min: %d, max: %d, groups: %v, topics: %v,", minDuration, maxDuration, groups, topics)
 
 	//getClusterAdmin
 
