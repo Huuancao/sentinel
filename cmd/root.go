@@ -43,7 +43,7 @@ func init() {
 // initConfig checks in config file and/or ENV variables if set
 func initConfig() {
 	viper.SetConfigName("sentinel")
-	viper.AddConfigPath("/etc/")
+	viper.AddConfigPath("/etc/sentinel/")
 	// if the config file is passed explicitly, use this instead of the default one
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)

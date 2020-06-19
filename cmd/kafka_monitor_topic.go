@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Huuancao/sentinel/pkg/config"
 	"github.com/Shopify/sarama"
@@ -18,7 +20,9 @@ var (
 	topic      string
 	partitions string
 	limit      int
+	partition  int32
 	offset     int64
+	initOffset int64
 	newest     bool
 	oldest     bool
 )
@@ -26,7 +30,7 @@ var (
 var bufferSize = flag.Int("buffer-size", 256, "The buffer size of the message channel.")
 
 var monitorCmd = &cobra.Command{
-	Use:   "kafkaMonitor",
+	Use:   "kafkaMonitorTopic",
 	Short: "Monitor a specific Kafka topic.",
 	Long: `Monitor a specific Kafka topic.
 
@@ -46,10 +50,9 @@ func init() {
 	monitorCmd.Flags().BoolVarP(&oldest, "oldest", "", false, "Display messages from the oldest offset")
 	monitorCmd.Flags().Int64VarP(&offset, "offset", "", 0, "Display messages from given offset of a given partition")
 	monitorCmd.Flags().StringVarP(&partitions, "partitions", "", "all", "Partitions to be consumed (all or comma-separated numbers)")
-	// yeah whatever, will parse that shit later... Cannot put default string "all" in an IntSliceVarP...
 }
 
-// getPartitions returns the list of available partitions
+// returns the list of available partitions
 func getPartitions(c sarama.Consumer) ([]int32, error) {
 	if partitions == "all" {
 		return c.Partitions(topic)
@@ -66,33 +69,106 @@ func getPartitions(c sarama.Consumer) ([]int32, error) {
 	return partList, nil
 }
 
-// monitorTopic
+// creates a consumer to consume and display message of a given topic
 func monitorTopic() {
 	logger, err := config.GetLogger(true)
 	if err != nil {
 		fmt.Printf("Could not create logger: %s\n", err)
 		os.Exit(1)
 	}
-	logger.Debugf("Provided config: topic: %s, limit: %d, newest: %t, oldest: %t, offset: %d, partitions: %v,", topic, limit, newest, oldest, offset, partitions)
+	//logger.Debugf("Provided config: topic: %s, limit: %d, newest: %t, oldest: %t, offset: %d, partitions: %v,", topic, limit, newest, oldest, offset, partitions)
 
 	client, err := config.GetKafkaClient()
 	if err != nil {
-		fmt.Printf("cannot connect to Kafka: %s\n", err)
+		logger.Printf("cannot connect to Kafka: %s\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
 	consumer, err := sarama.NewConsumerFromClient(client)
 	if err != nil {
-		fmt.Printf("cannot create Kafka consumer: %s\n", err)
+		logger.Printf("cannot create Kafka consumer: %s\n", err)
 		os.Exit(1)
 	}
 	defer consumer.Close()
 
 	partitionList, err := getPartitions(consumer)
-	logger.Debugf("Partition list: %v", partitionList)
+	if err != nil {
+		logger.Printf(" cannot retrieve the list of partitions: %s\n", err)
+		os.Exit(1)
+	}
 
-	brokerList := config.GetBrokers()
+	if oldest {
+		initOffset = sarama.OffsetOldest
+	} else if offset != 0 {
+		initOffset = offset
+	} else {
+		initOffset = sarama.OffsetNewest
+	}
 
-	logger.Debugf("Provided brokers: %v,", brokerList)
+	logger.Debugf("Offset: %v", initOffset)
+
+	var (
+		messageChan = make(chan *sarama.ConsumerMessage, *bufferSize)
+		closingChan = make(chan struct{})
+		wg          sync.WaitGroup
+	)
+
+	// go routine to handle ending signals -> closing channel
+	go func() {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Kill, os.Interrupt)
+		<-signals
+		logger.Println("Initiating Shutdown of the consumer...")
+		os.Exit(1)
+		closingChan <- struct{}{}
+	}()
+
+	// Reading the messages and forwarding it to the messageChan
+	for _, partition := range partitionList {
+		partConsumer, err := consumer.ConsumePartition(topic, partition, initOffset)
+		if err != nil {
+			logger.Printf("cannot create a Sarama partition consumer given topic %s and partition %d with offset %d: %s\n", topic, partition, initOffset, err)
+			os.Exit(1)
+		}
+		wg.Add(1)
+		go func(partConsumer sarama.PartitionConsumer) {
+			for {
+				select {
+				case <-closingChan:
+					wg.Done()
+					partConsumer.Close()
+					logger.Println("Closing Sarama partition consumer")
+					return
+				case message := <-partConsumer.Messages():
+					messageChan <- message
+				}
+			}
+		}(partConsumer)
+	}
+
+	// Displaying the messages
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		msgCount := 0
+		for {
+			select {
+			case <-closingChan:
+				wg.Done()
+				return
+			case message := <-messageChan:
+				if msgCount >= limit {
+					closingChan <- struct{}{}
+				}
+				fmt.Printf("Partition: %d\t Offset: %d\tMessage: %s\n", message.Partition, message.Offset, string(message.Value))
+				msgCount++
+			}
+		}
+	}()
+	wg.Wait()
+	fmt.Printf("Done consuming topic %s\n", topic)
+
+	close(messageChan)
+	close(closingChan)
 }

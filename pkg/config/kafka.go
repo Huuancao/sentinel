@@ -9,14 +9,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-type ClusterAdmin struct {
-	Client sarama.ClusterAdmin
-}
-
-func GetBrokers() []string {
+func getBrokers() []string {
 	brokerList := viper.GetStringSlice("kafka.brokers")
 	if len(brokerList) == 0 {
-		fmt.Println("You have to provide --brokers as an array")
+		fmt.Println("You have to provide --brokers as a comma seperated array")
 		os.Exit(1)
 	}
 	//fmt.Printf("Brokers: %v\n", brokerList)
@@ -32,10 +28,11 @@ func getKafkaVersion() (*sarama.KafkaVersion, error) {
 		}
 		return &parsedVersion, nil
 	}
-	// If version is not provided then return the default v1.
+	// If version is not provided then return the default v1
 	return &sarama.V1_0_0_0, nil
 }
 
+// returns a Sarama configuration
 func getConfig() (*sarama.Config, error) {
 	conf := sarama.NewConfig()
 	version, err := getKafkaVersion()
@@ -49,34 +46,33 @@ func getConfig() (*sarama.Config, error) {
 	return conf, nil
 }
 
-func getClusterAdmin() (*ClusterAdmin, error) {
+// creates a new Sarama Cluster Admin
+func newClusterAdmin(brokersList *[]string, conf *sarama.Config) (sarama.ClusterAdmin, error) {
+	clusterAdmin, err := sarama.NewClusterAdmin(*brokersList, conf)
+	if err != nil {
+		return nil, err
+	}
+	return clusterAdmin, nil
+}
+
+// returns a Sarama Cluster Admin
+func GetClusterAdmin() (*sarama.ClusterAdmin, error) {
 	conf, err := getConfig()
 	if err != nil {
 		return nil, fmt.Errorf("error in config creation: $s", err)
 	}
-	brokersList := GetBrokers()
-	clusterAdmin, err := NewClusterAdmin(&brokersList, conf)
+	brokersList := getBrokers()
+	clusterAdmin, err := newClusterAdmin(&brokersList, conf)
 	if err != nil {
 		return nil, err
 	}
-	return clusterAdmin, err
+	return &clusterAdmin, err
 }
 
-// getKafkaClient returns a new client
+// returns a new Kafka client
 func GetKafkaClient() (sarama.Client, error) {
 	conf, err := getConfig()
-	brokerList := GetBrokers()
-	// Create new client
+	brokerList := getBrokers()
 	client, err := sarama.NewClient(brokerList, conf)
 	return client, err
-}
-
-func NewClusterAdmin(brokersList *[]string, conf *sarama.Config) (*ClusterAdmin, error) {
-	c := &ClusterAdmin{}
-	client, err := sarama.NewClusterAdmin(*brokersList, conf)
-	if err != nil {
-		return nil, err
-	}
-	c.Client = client
-	return c, nil
 }
