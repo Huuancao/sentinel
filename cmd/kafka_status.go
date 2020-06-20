@@ -91,11 +91,6 @@ func status() {
 		os.Exit(1)
 	}
 
-	if err != nil {
-		logger.Errorf("cannot get all the topics from Kafka: %s", err)
-		os.Exit(1)
-	}
-
 	statusTable := tablewriter.NewWriter(os.Stdout)
 	statusTable.SetAlignment(tablewriter.ALIGN_LEFT)
 	statusTable.SetHeader([]string{"Topic", "Partition", "Leader", "Replicas", "ISR"})

@@ -11,11 +11,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-type ScrapeConfig struct {
-	Topics []string
-	Groups []string
-}
-
 func getBrokers() []string {
 	brokerList := viper.GetStringSlice("kafka.brokers")
 	if len(brokerList) == 0 {
@@ -74,14 +69,6 @@ func StringInArray(a string, array []string) bool {
 	return false
 }
 
-// returns a new scrape config
-func NewScrapeConfig(topics []string, groups []string) ScrapeConfig {
-	return ScrapeConfig{
-		Topics: topics,
-		Groups: groups,
-	}
-}
-
 // returns a Sarama Cluster Admin
 func GetClusterAdmin() (sarama.ClusterAdmin, error) {
 	conf, err := getConfig()
@@ -124,7 +111,7 @@ func GetConsumerGroups(ca sarama.ClusterAdmin) ([]string, error) {
 }
 
 // returns the configured topics in the Kafka cluster
-func GetTopics(ca sarama.ClusterAdmin, cfg ScrapeConfig) ([]string, error) {
+func GetTopics(ca sarama.ClusterAdmin) ([]string, error) {
 	topics := []string{}
 	kafkaTopics, err := ca.ListTopics()
 	if err != nil {
