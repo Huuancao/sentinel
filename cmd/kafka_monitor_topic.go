@@ -29,7 +29,7 @@ var (
 
 var bufferSize = flag.Int("buffer-size", 256, "The buffer size of the message channel.")
 
-var monitorCmd = &cobra.Command{
+var monitorTopicCmd = &cobra.Command{
 	Use:   "kafkaMonitorTopic",
 	Short: "Monitor a specific Kafka topic.",
 	Long: `Monitor a specific Kafka topic.
@@ -41,15 +41,15 @@ Consume and monitor a given Kafka topic given arbitrary offsets.`,
 }
 
 func init() {
-	RootCmd.AddCommand(monitorCmd)
+	RootCmd.AddCommand(monitorTopicCmd)
 
-	monitorCmd.Flags().IntVarP(&limit, "limit", "", defaultMessageLimit, "Limits maximum amount of displayed messages")
-	monitorCmd.Flags().StringVarP(&topic, "topic", "", "", "Display messages of given topic")
+	monitorTopicCmd.Flags().IntVarP(&limit, "limit", "", defaultMessageLimit, "Limits maximum amount of displayed messages")
+	monitorTopicCmd.Flags().StringVarP(&topic, "topic", "", "", "Display messages of given topic")
 	// newest is by default
-	monitorCmd.Flags().BoolVarP(&newest, "newest", "", false, "Display messages from the newest offset")
-	monitorCmd.Flags().BoolVarP(&oldest, "oldest", "", false, "Display messages from the oldest offset")
-	monitorCmd.Flags().Int64VarP(&offset, "offset", "", 0, "Display messages from given offset of a given partition")
-	monitorCmd.Flags().StringVarP(&partitions, "partitions", "", "all", "Partitions to be consumed (all or comma-separated numbers)")
+	monitorTopicCmd.Flags().BoolVarP(&newest, "newest", "", false, "Display messages from the newest offset")
+	monitorTopicCmd.Flags().BoolVarP(&oldest, "oldest", "", false, "Display messages from the oldest offset")
+	monitorTopicCmd.Flags().Int64VarP(&offset, "offset", "", 0, "Display messages from given offset of a given partition")
+	monitorTopicCmd.Flags().StringVarP(&partitions, "partitions", "", "all", "Partitions to be consumed (all or comma-separated numbers)")
 }
 
 // returns the list of available partitions

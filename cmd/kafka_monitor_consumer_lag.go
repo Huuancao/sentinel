@@ -28,12 +28,12 @@ var (
 	)
 )
 
-var consumerLagCmd = &cobra.Command{
+var monitorConsumerLagCmd = &cobra.Command{
 	Use:   "kafkaConsumerlag",
 	Short: "Monitor the consumer lag of a specific kafka topic(s).",
 	Long:  `Monitor the consumer lag of a specific kafka topic(s).`,
 	Run: func(cmd *cobra.Command, args []string) {
-		consumerLag()
+		monitorConsumerLag()
 	},
 }
 
@@ -46,12 +46,12 @@ var (
 )
 
 func init() {
-	RootCmd.AddCommand(consumerLagCmd)
+	RootCmd.AddCommand(monitorConsumerLagCmd)
 
 	prometheus.MustRegister(metricOffsetConsumer)
 }
 
-func consumerLag() {
+func monitorConsumerLag() {
 	minDuration = viper.GetInt("kafka.consumerlag.minduration")
 	maxDuration = viper.GetInt("kafka.consumerlag.maxduration")
 	refresh = viper.GetInt("kafka.consumerlag.refresh")
