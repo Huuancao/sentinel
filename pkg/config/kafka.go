@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -63,7 +64,7 @@ func newClusterAdmin(brokersList *[]string, conf *sarama.Config) (sarama.Cluster
 }
 
 // basic check if string is in the array
-func stringInArray(a string, array []string) bool {
+func StringInArray(a string, array []string) bool {
 	for _, b := range array {
 		if a == b {
 			return true
@@ -122,49 +123,45 @@ func GetConsumerGroups(ca sarama.ClusterAdmin) ([]string, error) {
 	return groups, nil
 }
 
-// returns the monitored Kafka topics
-func GetTopics(ca sarama.ClusterAdmin, cfg ScrapeConfig) (map[string]bool, error) {
-	topics := map[string]bool{}
+// returns the configured topics in the Kafka cluster
+func GetTopics(ca sarama.ClusterAdmin, cfg ScrapeConfig) ([]string, error) {
+	topics := []string{}
 	kafkaTopics, err := ca.ListTopics()
 	if err != nil {
 		return topics, err
 	}
-	for kafkaTopic, _ := range kafkaTopics {
-		if stringInArray(kafkaTopic, cfg.Topics) {
-			topics[kafkaTopic] = true
-		} else {
-			topics[kafkaTopic] = false
-		}
+	for topic, _ := range kafkaTopics {
+		topics = append(topics, topic)
 	}
+	sort.Strings(topics)
 
 	return topics, nil
 }
 
-//returns the offsets or consumer lag for a given topic and given consumer group
-func GetConsumerGroupOffsets(group string, topic string, client sarama.Client, ca sarama.ClusterAdmin, lag bool) (map[int32]int64, error) {
-	partitionsOffsets := map[int32]int64{}
+//returns the offsets or consumer lag for given consumer group for all topics
+func GetConsumerGroupOffsets(group string, client sarama.Client, ca sarama.ClusterAdmin, lag bool) (map[string]map[int32]int64, error) {
+	consumerOffsetsPerTopicPartitions := map[string]map[int32]int64{}
 	offsetFetchResponse, err := ca.ListConsumerGroupOffsets(group, nil)
 	if err != nil {
 		e := errors.Errorf("failed to retrieve the offsets for group %s", group)
 		return nil, e
 	}
 
-	for tpc, blocks := range offsetFetchResponse.Blocks {
-		if tpc == topic {
-			for partition, block := range blocks {
-				newestOffset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
-				if err != nil {
-					e := errors.Errorf("failed to retrieve the newest offsets for topic: %s, partition %d", topic, partition)
-					return nil, e
-				}
-				// might as well already handle the consumer lag
-				if lag {
-					partitionsOffsets[partition] = newestOffset - block.Offset
-				} else {
-					partitionsOffsets[partition] = newestOffset
-				}
+	for topic, blocks := range offsetFetchResponse.Blocks {
+		consumerOffsetsPerTopicPartitions[topic] = map[int32]int64{}
+		for partition, block := range blocks {
+			newestOffset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
+			if err != nil {
+				e := errors.Errorf("failed to retrieve the newest offsets for topic: %s, partition %d", topic, partition)
+				return nil, e
+			}
+			// might as well already handle the consumer lag
+			if lag {
+				consumerOffsetsPerTopicPartitions[topic][partition] = newestOffset - block.Offset
+			} else {
+				consumerOffsetsPerTopicPartitions[topic][partition] = newestOffset
 			}
 		}
 	}
-	return partitionsOffsets, nil
+	return consumerOffsetsPerTopicPartitions, nil
 }

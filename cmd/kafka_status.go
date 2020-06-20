@@ -12,16 +12,22 @@ import (
 )
 
 var (
-	silent bool
+	silent          bool
+	topicsFlag      []string
+	groupsFlag      []string
+	monitoredGroups []string
+	monitoredTopics []string
 )
 
 var kafkaStatus = &cobra.Command{
 	Use:   "kafkaStatus",
 	Short: "Show the status of the Kafka Cluster",
 	Long: `Show relevant informations of the Kafka Cluster:
-	 - Partitions
 	 - Topics
-	 - Consumers and respective Offsets
+	 - Partitions
+	 - Leader/Replicas
+	 - ISR
+	 - Consumers and respective offsets per topic and partitions
 	 - ...
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -32,6 +38,8 @@ var kafkaStatus = &cobra.Command{
 func init() {
 	RootCmd.AddCommand(kafkaStatus)
 
+	kafkaStatus.Flags().StringSliceVarP(&groupsFlag, "groups", "", []string{}, "Groups to be checked")
+	kafkaStatus.Flags().StringSliceVarP(&topicsFlag, "topics", "", []string{}, "Topics to be checked")
 	kafkaStatus.Flags().BoolVarP(&silent, "silent", "", false, "Do not display Kafka __consumer_offsets")
 }
 
@@ -41,16 +49,27 @@ func status() {
 		fmt.Printf("Could not create logger: %s\n", err)
 		os.Exit(1)
 	}
-	monitoredGroups := viper.GetStringSlice("kafka.consumerlag.consumergroups")
-	monitoredTopics := viper.GetStringSlice("kafka.consumerlag.topics")
+	if len(groupsFlag) != 0 {
+		monitoredGroups = groupsFlag
+	} else {
+		monitoredGroups = viper.GetStringSlice("kafka.consumerlag.consumergroups")
+	}
+	if len(topicsFlag) != 0 {
+		monitoredTopics = topicsFlag
+	} else {
+		monitoredTopics = viper.GetStringSlice("kafka.consumerlag.topics")
+	}
 
 	if len(monitoredGroups) == 0 {
-		logger.Printf("No configured monitored topics\n")
+		logger.Errorf("No configured monitored topics\n")
+		os.Exit(1)
 	}
 	if len(monitoredTopics) == 0 {
-		logger.Printf("No configured monitored topics\n")
+		logger.Errorf("No configured monitored topics\n")
+		os.Exit(1)
 	}
 
+	// Sorting this in prevision to order the displayed info
 	sort.Slice(monitoredGroups, func(i int, j int) bool {
 		return monitoredGroups[i] < monitoredGroups[j]
 	})
@@ -61,25 +80,19 @@ func status() {
 
 	client, err := config.GetKafkaClient()
 	if err != nil {
-		logger.Printf("cannot connect to Kafka: %s\n", err)
+		logger.Errorf("cannot connect to Kafka: %s\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
 	ca, err := config.GetClusterAdmin()
 	if err != nil {
-		logger.Printf("Could not create cluster admin: %s\n", err)
-		os.Exit(1)
-	}
-	scrapeConfig := config.NewScrapeConfig(monitoredTopics, monitoredGroups)
-	if err != nil {
-		fmt.Printf("Could not create scrape config: %s\n", err)
+		logger.Errorf("Could not create cluster admin: %s\n", err)
 		os.Exit(1)
 	}
 
-	allTopics, err := config.GetTopics(ca, scrapeConfig)
 	if err != nil {
-		logger.Printf("cannot get all the topics from Kafka: %s", err)
+		logger.Errorf("cannot get all the topics from Kafka: %s", err)
 		os.Exit(1)
 	}
 
@@ -88,9 +101,10 @@ func status() {
 	statusTable.SetHeader([]string{"Topic", "Partition", "Leader", "Replicas", "ISR"})
 	consumerOffsetTable := tablewriter.NewWriter(os.Stdout)
 	consumerOffsetTable.SetAlignment(tablewriter.ALIGN_LEFT)
-	consumerOffsetTable.SetHeader([]string{"Topic", "Partition", "Consumer Group", "Consumer Offset"})
+	consumerOffsetTable.SetHeader([]string{"Consumer Group", "Topic", "Partition", "Consumer Offset"})
 
-	for topic, _ := range allTopics {
+	// Retrieving the partitions information (ID, Leader, Replicas, ISR)
+	for _, topic := range monitoredTopics {
 		if silent {
 			if topic == "__consumer_offsets" {
 				break
@@ -117,23 +131,31 @@ func status() {
 
 	}
 
-	for _, topic := range monitoredTopics {
-		for _, group := range monitoredGroups {
-			consumerGroupOffsets, err := config.GetConsumerGroupOffsets(group, topic, client, ca, false)
+	// Retrieving the consumer offsets per topic
+	for _, group := range monitoredGroups {
+		for _, topic := range monitoredTopics {
+			consumerOffsetsPerTopicPartitions, err := config.GetConsumerGroupOffsets(group, client, ca, false)
 			if err != nil {
 				logger.Printf("%s\n", err)
 				break
 			}
-			keys := []int32{}
-			for k, _ := range consumerGroupOffsets {
-				keys = append(keys, k)
+			kafkaTopics := []string{}
+			for t, _ := range consumerOffsetsPerTopicPartitions {
+				kafkaTopics = append(kafkaTopics, t)
 			}
-			sort.Slice(keys, func(i int, j int) bool {
-				return keys[i] < keys[j]
-			})
 
-			for _, k := range keys {
-				consumerOffsetTable.Append([]string{topic, fmt.Sprintf("%d", k), fmt.Sprintf("%s", group), fmt.Sprintf("%d", consumerGroupOffsets[k])})
+			if config.StringInArray(topic, kafkaTopics) {
+				partitions := []int32{}
+				for k, _ := range consumerOffsetsPerTopicPartitions[topic] {
+					partitions = append(partitions, k)
+				}
+				sort.Slice(partitions, func(i int, j int) bool {
+					return partitions[i] < partitions[j]
+				})
+
+				for _, k := range partitions {
+					consumerOffsetTable.Append([]string{group, topic, fmt.Sprintf("%d", k), fmt.Sprintf("%d", consumerOffsetsPerTopicPartitions[topic][k])})
+				}
 			}
 		}
 	}
