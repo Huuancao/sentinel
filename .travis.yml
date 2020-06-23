@@ -3,5 +3,9 @@ language: go
 go:
   - 1.14.x
 
+before_install:
+  - go get github.com/mattn/goveralls
+
 script:
   - make all
+  - make coverage

@@ -13,7 +13,7 @@ var (
 )
 
 var checkSubdomainCertCmd = &cobra.Command{
-	Use:   "checkSubdomainCert",
+	Use:   "certSubdomainCheck",
 	Short: "Check the validity of all certificates of all sub-domains of a given domain.",
 	Long: `Check the validity of all certificates of all sub-domains of a given domain.
 

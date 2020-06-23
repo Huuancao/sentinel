@@ -1,0 +1,17 @@
+---
+kafka:
+  zookeeper:
+    - localhost:2181
+  brokers:
+    - localhost:9092
+  consumerlag:
+    minduration: 10
+    maxduration: 30
+    refresh: 30
+    consumergroups:
+      - group_1
+      - group_2
+    topics:
+      - topic_1
+      - topic_2
+  version: 2.5.0
