@@ -80,21 +80,21 @@ func monitorTopic() {
 
 	client, err := config.GetKafkaClient()
 	if err != nil {
-		logger.Printf("cannot connect to Kafka: %s\n", err)
+		logger.Fatalf("cannot connect to the Kafka cluster: %s\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
 	consumer, err := sarama.NewConsumerFromClient(client)
 	if err != nil {
-		logger.Printf("cannot create Kafka consumer: %s\n", err)
+		logger.Fatalf("cannot create a Kafka consumer: %s\n", err)
 		os.Exit(1)
 	}
 	defer consumer.Close()
 
 	partitionList, err := getPartitions(consumer)
 	if err != nil {
-		logger.Printf(" cannot retrieve the list of partitions: %s\n", err)
+		logger.Fatalf(" cannot retrieve the list of partitions: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -106,7 +106,7 @@ func monitorTopic() {
 		initOffset = sarama.OffsetNewest
 	}
 
-	logger.Debugf("Offset: %v", initOffset)
+	//logger.Debugf("Offset: %v", initOffset)
 
 	var (
 		messageChan = make(chan *sarama.ConsumerMessage, *bufferSize)
@@ -119,7 +119,7 @@ func monitorTopic() {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
 		<-signals
-		logger.Println("Initiating Shutdown of the consumer...")
+		logger.Info("Initiating Shutdown of the consumer...")
 		os.Exit(1)
 		closingChan <- struct{}{}
 	}()
@@ -128,7 +128,7 @@ func monitorTopic() {
 	for _, partition := range partitionList {
 		partConsumer, err := consumer.ConsumePartition(topic, partition, initOffset)
 		if err != nil {
-			logger.Printf("cannot create a Sarama partition consumer given topic %s and partition %d with offset %d: %s\n", topic, partition, initOffset, err)
+			logger.Fatalf("cannot create a Sarama partition consumer given topic %s and partition %d with offset %d: %s\n", topic, partition, initOffset, err)
 			os.Exit(1)
 		}
 		wg.Add(1)
@@ -138,7 +138,7 @@ func monitorTopic() {
 				case <-closingChan:
 					wg.Done()
 					partConsumer.Close()
-					logger.Println("Closing Sarama partition consumer")
+					logger.Info("Closing Sarama partition consumer")
 					return
 				case message := <-partConsumer.Messages():
 					messageChan <- message

@@ -61,11 +61,11 @@ func status() {
 	}
 
 	if len(monitoredGroups) == 0 {
-		logger.Errorf("No configured monitored topics\n")
+		logger.Fatal("No configured monitored topics.")
 		os.Exit(1)
 	}
 	if len(monitoredTopics) == 0 {
-		logger.Errorf("No configured monitored topics\n")
+		logger.Fatal("No configured monitored topics.")
 		os.Exit(1)
 	}
 
@@ -80,14 +80,14 @@ func status() {
 
 	client, err := config.GetKafkaClient()
 	if err != nil {
-		logger.Errorf("cannot connect to Kafka: %s\n", err)
+		logger.Fatalf("cannot connect to the Kafka cluster: %s\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
 	ca, err := config.GetClusterAdmin()
 	if err != nil {
-		logger.Errorf("Could not create cluster admin: %s\n", err)
+		logger.Fatalf("Could not create a cluster admin: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -108,7 +108,7 @@ func status() {
 			partitions, err := client.Partitions(topic)
 
 			if err != nil {
-				logger.Warn("cannot get partitions for topic %s: %s", topic, err)
+				logger.Errorf("cannot get partitions for topic %s: %s", topic, err)
 			}
 
 			sort.Slice(partitions, func(i int, j int) bool {
@@ -131,7 +131,7 @@ func status() {
 		for _, topic := range monitoredTopics {
 			consumerOffsetsPerTopicPartitions, err := config.GetConsumerGroupOffsets(group, client, ca, false)
 			if err != nil {
-				logger.Printf("%s\n", err)
+				//logger.Debugf("%s\n", err)
 				break
 			}
 			kafkaTopics := []string{}

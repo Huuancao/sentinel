@@ -2,23 +2,63 @@ package config
 
 import (
 	"fmt"
-	"os"
+	"math/rand"
 	"sort"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/viper"
 )
 
-func getBrokers() []string {
+type ScrapeConfig struct {
+	FetchMinInterval        int
+	FetchMaxInterval        int
+	MetadataRefreshInterval int
+	Topics                  []string
+	Groups                  []string
+}
+
+func NewScrapeConfig(refresh int, fetchMin int, fetchMax int, groups []string, topics []string) (ScrapeConfig, error) {
+	if len(topics) == 0 {
+		return ScrapeConfig{}, errors.New("no monitored topic provided")
+	}
+	if len(groups) == 0 {
+		return ScrapeConfig{}, errors.New("no monitored consumer groups provided\n")
+	}
+
+	// set default values
+	if fetchMin < 10 || fetchMin > 30 {
+		fetchMin = 10
+	}
+
+	if fetchMax < 30 || fetchMax > 60 {
+		fetchMax = 30
+	}
+
+	if refresh < 0 || refresh > 60 {
+		refresh = 30
+	}
+
+	return ScrapeConfig{
+		FetchMinInterval:        fetchMin,
+		FetchMaxInterval:        fetchMax,
+		MetadataRefreshInterval: refresh,
+		Groups:                  groups,
+		Topics:                  topics,
+	}, nil
+}
+
+func getBrokers() ([]string, error) {
 	brokerList := viper.GetStringSlice("kafka.brokers")
 	if len(brokerList) == 0 {
-		fmt.Println("You have to provide --brokers as a comma seperated array")
-		os.Exit(1)
+		return brokerList, errors.New("You have to provide --brokers as a comma seperated array")
 	}
 	//fmt.Printf("Brokers: %v\n", brokerList)
-	return brokerList
+	return brokerList, nil
 }
 
 func getKafkaVersion() (*sarama.KafkaVersion, error) {
@@ -26,7 +66,7 @@ func getKafkaVersion() (*sarama.KafkaVersion, error) {
 	if valueFile != "" {
 		parsedVersion, err := sarama.ParseKafkaVersion(valueFile)
 		if err != nil {
-			return nil, fmt.Errorf("Error when parsing Kafka version config value: %s", err)
+			return nil, errors.Wrap(err, "Error when parsing Kafka version config value")
 		}
 		return &parsedVersion, nil
 	}
@@ -39,7 +79,7 @@ func getConfig() (*sarama.Config, error) {
 	conf := sarama.NewConfig()
 	version, err := getKafkaVersion()
 	if err != nil {
-		return nil, fmt.Errorf("Could not set the Kafka version: %s", err)
+		return nil, errors.Wrap(err, "Could not set the Kafka version")
 	}
 	conf.Version = *version
 	conf.Consumer.Return.Errors = true
@@ -69,13 +109,29 @@ func StringInArray(a string, array []string) bool {
 	return false
 }
 
+// returns the elements that are in both provided arrayss
+func getArrayIntersection(firstArray []string, secondArray []string) []string {
+	intersection := []string{}
+
+	for _, i := range firstArray {
+		if StringInArray(i, secondArray) {
+			intersection = append(intersection, i)
+		}
+	}
+
+	return intersection
+}
+
 // returns a Sarama Cluster Admin
 func GetClusterAdmin() (sarama.ClusterAdmin, error) {
 	conf, err := getConfig()
 	if err != nil {
-		return nil, fmt.Errorf("error in config creation: $s", err)
+		return nil, err
 	}
-	brokersList := getBrokers()
+	brokersList, err := getBrokers()
+	if err != nil {
+		return nil, err
+	}
 	clusterAdmin, err := newClusterAdmin(&brokersList, conf)
 	if err != nil {
 		return nil, err
@@ -87,7 +143,10 @@ func GetClusterAdmin() (sarama.ClusterAdmin, error) {
 // returns a new Kafka client
 func GetKafkaClient() (sarama.Client, error) {
 	conf, err := getConfig()
-	brokerList := getBrokers()
+	brokerList, err := getBrokers()
+	if err != nil {
+		return nil, err
+	}
 	client, err := sarama.NewClient(brokerList, conf)
 
 	return client, err
@@ -125,7 +184,7 @@ func GetTopics(ca sarama.ClusterAdmin) ([]string, error) {
 	return topics, nil
 }
 
-//returns the offsets or consumer lag for given consumer group for all topics
+// returns the offsets or consumer lag for given consumer group for all topics
 func GetConsumerGroupOffsets(group string, client sarama.Client, ca sarama.ClusterAdmin, lag bool) (map[string]map[int32]int64, error) {
 	consumerOffsetsPerTopicPartitions := map[string]map[int32]int64{}
 	offsetFetchResponse, err := ca.ListConsumerGroupOffsets(group, nil)
@@ -151,4 +210,105 @@ func GetConsumerGroupOffsets(group string, client sarama.Client, ca sarama.Clust
 		}
 	}
 	return consumerOffsetsPerTopicPartitions, nil
+}
+
+// stars Kafka Scraper
+func StartKafkaScraper(wg *sync.WaitGroup, shutdownChan chan struct{}, errorChan chan error, client sarama.Client, ca sarama.ClusterAdmin, consumerOffset *prometheus.GaugeVec, scrapeConfig ScrapeConfig) {
+	go refreshMetadata(wg, shutdownChan, errorChan, client, scrapeConfig)
+	go manageConsumerLag(wg, shutdownChan, errorChan, client, ca, scrapeConfig, consumerOffset)
+}
+
+// refreshes the metadata
+func refreshMetadata(wg *sync.WaitGroup, shutdownChan chan struct{}, errorChan chan error, client sarama.Client, scrapeConfig ScrapeConfig) {
+	logger, err := GetLogger(true)
+	if err != nil {
+		fmt.Printf("Could not create logger: %s\n", err)
+		errorChan <- err
+	}
+
+	wg.Add(1)
+	defer wg.Done()
+	wait := time.After(0)
+	for {
+		select {
+		case <-wait:
+			err := client.RefreshMetadata()
+			if err != nil {
+				logger.Errorf("Failed to refresh the cluster metadata: %s", err)
+			}
+		case <-shutdownChan:
+			logger.Printf("Initiating refreshMetadata shutdown of the consumer lag broker handler...")
+			return
+		}
+
+		// I forgot that crap was in nanosec...
+		delay := time.Duration(scrapeConfig.MetadataRefreshInterval) * 1000000000
+		wait = time.After(delay)
+	}
+}
+
+// queries and manages the consumer lag data
+func manageConsumerLag(wg *sync.WaitGroup, shutdownChan chan struct{}, errorChan chan error, client sarama.Client, ca sarama.ClusterAdmin, scrapeConfig ScrapeConfig, metricOffsetConsumer *prometheus.GaugeVec) {
+	logger, err := GetLogger(true)
+	if err != nil {
+		e := errors.Wrap(err, "could not create logger")
+		errorChan <- e
+	}
+
+	topicsKafka, err := GetTopics(ca)
+	if err != nil {
+		e := errors.Wrap(err, "failed to retrieve topics from the cluster")
+		errorChan <- e
+	}
+	groupsKafka, err := GetConsumerGroups(ca)
+	if err != nil {
+		e := errors.Wrap(err, "failed to retrieve consumer groups from the cluster")
+		errorChan <- e
+	}
+
+	// retrieve the monitored topics configured in the Kafka cluster
+	topics := getArrayIntersection(scrapeConfig.Topics, topicsKafka)
+	groups := getArrayIntersection(scrapeConfig.Groups, groupsKafka)
+
+	numberRequests := len(groups)
+
+	wg.Add(1)
+	defer wg.Done()
+	wait := time.After(0)
+	for {
+		select {
+		case <-wait:
+			requestWG := &sync.WaitGroup{}
+			requestWG.Add(2 + numberRequests)
+			for _, group := range groups {
+				go func(group string, topics []string, client sarama.Client, ca sarama.ClusterAdmin, metricOffsetConsumer *prometheus.GaugeVec) {
+					requestWG.Done()
+					consumerOffsets, err := GetConsumerGroupOffsets(group, client, ca, true)
+					for _, topic := range topics {
+						for partition, _ := range consumerOffsets[topic] {
+							metricOffsetConsumer.With(prometheus.Labels{
+								"topic":     topic,
+								"partition": strconv.Itoa(int(partition)),
+								"group":     group,
+							}).Set(float64(consumerOffsets[topic][partition]))
+						}
+					}
+					if err != nil {
+						errorChan <- err
+					}
+				}(group, topics, client, ca, metricOffsetConsumer)
+			}
+
+		case <-shutdownChan:
+			logger.Printf("Initiating shutdown of the consumer lag broker handler...")
+			return
+		}
+
+		min := int64(scrapeConfig.FetchMinInterval)
+		max := int64(scrapeConfig.FetchMaxInterval)
+		// this crap is AGAIN in nanosec...
+		duration := time.Duration((rand.Int63n(max - min)) * 1000000000)
+
+		wait = time.After(duration)
+	}
 }

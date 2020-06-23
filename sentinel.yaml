@@ -7,7 +7,7 @@ kafka:
   consumerlag:
     minduration: 10
     maxduration: 30
-    refresh: 10
+    refresh: 30
     consumergroups:
       - group_1
       - group_2
