@@ -13,7 +13,7 @@ var (
 )
 
 var checkSubnetCertCmd = &cobra.Command{
-	Use:   "checkSubnetCert",
+	Use:   "certSubnetCheck",
 	Short: "Check the validity of all certificates in a given subnet.",
 	Long: `Check the validity of all certificates in a given subnet.
 
